@@ -1,4 +1,4 @@
-# Thoughts2Obsidian 🧠📝
+# Thoughts2Obsidian 📝
 
 > 在 Telegram 群里随口说一句，它就忠实地把你的「随想」原样存进 Obsidian 的当日笔记，并同步到所有设备。
 >
