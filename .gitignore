@@ -1,0 +1,13 @@
+# 本地真实配置（含私有 chat_id 等），切勿提交
+profiles/default/config.env
+
+# 日志 / 运行产物
+logs/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+
+# 系统
+.DS_Store

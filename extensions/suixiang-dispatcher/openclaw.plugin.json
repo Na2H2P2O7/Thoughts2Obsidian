@@ -1,0 +1,25 @@
+{
+  "id": "suixiang-dispatcher",
+  "name": "随想记录员 Dispatcher",
+  "description": "Records every plain-text message in the configured Telegram group to a daily FastNote markdown note (Thoughts/YYYY-MM-DD.md), append-only with HH:MM timestamps; replies a receipt and falls back to the DeepSeek agent only on script failure.",
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "hooks": ["before_dispatch"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "telegramGroupId": { "type": "string" },
+      "appendScript": { "type": "string" },
+      "python": { "type": "string" },
+      "logDir": { "type": "string" },
+      "folder": { "type": "string" },
+      "tz": { "type": "string" },
+      "node": { "type": "string" },
+      "openclawCli": { "type": "string" }
+    }
+  }
+}
