@@ -174,6 +174,36 @@ dispatcher 的运行配置来自 `openclaw.json` 的 `plugins.entries["suixiang-
 
 ---
 
+## 🩺 运维：自愈看门狗 / Ops: self-healing watchdog
+
+托管 OpenClaw 的机器到 `api.telegram.org` 可能间歇性断网。网络抖动时 Telegram 通道会卡死成 `stopped / disconnected`，而内置 health-monitor 的自动重启可能 `channel stop timed out after 5000ms` 恢复失败——表现为「跟 bot 说话没有回应、所有 Telegram dispatcher 停摆」（但 launchd 后台任务照常）。
+
+`ops/` 提供一个**纯脚本、无 LLM** 的 launchd 看门狗自动兜底：
+
+- 每 **600s** 跑一次，读 `openclaw channels status`（不 `--probe`，网络断时也不阻塞）。
+- Telegram 不健康 **且** `api.telegram.org` 可达 **且** 不在冷却期 → `launchctl kickstart` 重启 gateway。
+- 防重启风暴三道闸：**连续 2 次**不健康才动手 · kick 后 **10 分钟冷却** · 网络不通则跳过（重启无用，等网络恢复）。
+
+```bash
+# 安装 / 更新（幂等；生成 launchd plist 并加载）
+SUIXIANG_SSH_HOST=<你的 ssh 别名> ./ops/install-watchdog.sh
+
+# 观察
+ssh <host> 'tail -f ~/.openclaw/logs/telegram-watchdog.log'
+```
+
+| 可调项 | 默认 | 说明 |
+|---|---|---|
+| `WATCHDOG_INTERVAL`（plist `StartInterval`） | `600` | 检查间隔（秒） |
+| `WATCHDOG_FAIL_THRESHOLD` | `2` | 连续几次不健康才重启 |
+| `WATCHDOG_COOLDOWN` | `600` | 两次重启的最小间隔（秒） |
+
+> 🧪 脚本内置测试钩子：`WATCHDOG_FAKE_STATUS="<状态行>"` 与 `WATCHDOG_DRY_RUN=1` 可在不触碰真实通道的前提下验证每条决策分支。
+
+The machine hosting OpenClaw can intermittently lose connectivity to `api.telegram.org`; a blip can wedge the Telegram channel into `stopped/disconnected`, and the built-in auto-restart may fail (`channel stop timed out after 5000ms`). `ops/` ships a **pure-script, no-LLM** launchd watchdog that checks the channel every 600s and `kickstart`s the gateway to recover — guarded by a 2-strike debounce, a 10-minute cooldown, and a skip-when-network-down check to prevent restart storms.
+
+---
+
 ## 🙏 致谢 / Acknowledgements
 
 - [Podcast2Obsidian](https://github.com/Na2H2P2O7/Podcast2Obsidian) — 共享的 dispatcher / Fast Note / 回执机制

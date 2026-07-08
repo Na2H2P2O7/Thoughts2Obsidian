@@ -8,7 +8,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SSH_HOST="${SUIXIANG_SSH_HOST:-mac2016}"
 LABEL="com.suixiang.telegram-watchdog"
-INTERVAL="${WATCHDOG_INTERVAL:-180}"
+INTERVAL="${WATCHDOG_INTERVAL:-600}"
 
 echo "==> 目标: $SSH_HOST"
 ssh "$SSH_HOST" "mkdir -p .openclaw/ops/state .openclaw/logs Library/LaunchAgents"
