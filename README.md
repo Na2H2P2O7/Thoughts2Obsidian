@@ -176,13 +176,11 @@ dispatcher 的运行配置来自 `openclaw.json` 的 `plugins.entries["suixiang-
 
 ## 🩺 运维：自愈看门狗 / Ops: self-healing watchdog
 
-托管 OpenClaw 的机器到 `api.telegram.org` 可能间歇性断网。网络抖动时 Telegram 通道会卡死成 `stopped / disconnected`，而内置 health-monitor 的自动重启可能 `channel stop timed out after 5000ms` 恢复失败——表现为「跟 bot 说话没有回应、所有 Telegram dispatcher 停摆」（但 launchd 后台任务照常）。
+`ops/` 提供一个**纯脚本、无 LLM** 的 launchd 看门狗，每 **600s** 跑一次，自愈两类故障：
 
-`ops/` 提供一个**纯脚本、无 LLM** 的 launchd 看门狗自动兜底：
-
-- 每 **600s** 跑一次，读 `openclaw channels status`（不 `--probe`，网络断时也不阻塞）。
-- Telegram 不健康 **且** `api.telegram.org` 可达 **且** 不在冷却期 → `launchctl kickstart` 重启 gateway。
-- 防重启风暴三道闸：**连续 2 次**不健康才动手 · kick 后 **10 分钟冷却** · 网络不通则跳过（重启无用，等网络恢复）。
+- **A｜进程堆积**：某处泄漏子进程（实测是 NotebookLM 拉起的 Chrome 会话没退干净）堆到逼近 per-uid 进程上限 → 任何新进程 `fork` 失败 → dispatcher 起不了 append/回执子进程、SSH 也开不了 shell（表现为「有表情、没回执」）。看门狗用最便宜的 `ps|wc`、**先于**一切 openclaw/curl 调用检查，进程数超过上限的 **70%** 就 `launchctl kickstart` 重启 gateway 回收其子孙进程（在耗尽前动手，给自己留足 fork 余量）。
+- **B｜Telegram 通道卡死**：到 `api.telegram.org` 网络抖动后通道 `stopped/disconnected`，内置 health-monitor 的重启 `channel stop timed out after 5000ms` 恢复失败（表现为「跟 bot 说话没有龙虾表情、所有 dispatcher 停摆」，但 launchd 后台任务照常）。看门狗读 `openclaw channels status`（不 `--probe`），通道不健康 **且** 网络可达 **且** 不在冷却期 → 重启 gateway。
+- 防重启风暴：通道故障需**连续 2 次**不健康才动手 · kick 后 **10 分钟冷却** · 网络不通则跳过。
 
 ```bash
 # 安装 / 更新（幂等；生成 launchd plist 并加载）
@@ -195,12 +193,13 @@ ssh <host> 'tail -f ~/.openclaw/logs/telegram-watchdog.log'
 | 可调项 | 默认 | 说明 |
 |---|---|---|
 | `WATCHDOG_INTERVAL`（plist `StartInterval`） | `600` | 检查间隔（秒） |
-| `WATCHDOG_FAIL_THRESHOLD` | `2` | 连续几次不健康才重启 |
+| `WATCHDOG_PROC_MAX` | `0`（=`kern.maxprocperuid`×70%） | 进程数超过此值即回收 |
+| `WATCHDOG_FAIL_THRESHOLD` | `2` | 通道连续几次不健康才重启 |
 | `WATCHDOG_COOLDOWN` | `600` | 两次重启的最小间隔（秒） |
 
-> 🧪 脚本内置测试钩子：`WATCHDOG_FAKE_STATUS="<状态行>"` 与 `WATCHDOG_DRY_RUN=1` 可在不触碰真实通道的前提下验证每条决策分支。
+> 🧪 脚本内置测试钩子：`WATCHDOG_FAKE_STATUS="<状态行>"`、`WATCHDOG_FAKE_PROC=<n>`、`WATCHDOG_DRY_RUN=1` 可在不触碰真实系统的前提下验证每条决策分支。
 
-The machine hosting OpenClaw can intermittently lose connectivity to `api.telegram.org`; a blip can wedge the Telegram channel into `stopped/disconnected`, and the built-in auto-restart may fail (`channel stop timed out after 5000ms`). `ops/` ships a **pure-script, no-LLM** launchd watchdog that checks the channel every 600s and `kickstart`s the gateway to recover — guarded by a 2-strike debounce, a 10-minute cooldown, and a skip-when-network-down check to prevent restart storms.
+`ops/` ships a **pure-script, no-LLM** launchd watchdog (every 600s) that self-heals two failures: **(A)** process pileup — leaked child processes (e.g. NotebookLM's headless Chrome) approaching the per-uid process cap so nothing can `fork` (symptom: reaction shows but no reply); detected with a cheap `ps|wc` that runs *before* any other spawn and `kickstart`s the gateway once usage passes 70% of the cap, reclaiming its descendants while fork headroom remains. **(B)** Telegram channel wedged `stopped/disconnected` after a network blip. Guarded by a 2-strike debounce, a 10-minute cooldown, and a skip-when-network-down check to prevent restart storms.
 
 ---
 
